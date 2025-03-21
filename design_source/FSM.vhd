@@ -52,28 +52,55 @@ architecture Behavioral of FSM is             -- hardcoded FSM for K = 3
   signal count_sss_val, count_iis_val : std_logic_vector(COUNTER_WIDTH-1 downto 0);
   signal sel_counter1_val : std_logic;
   
-  signal r_result_valid_1 : std_logic_vector(K downto 0);
-  signal r_result_valid_2 : std_logic_vector(1 downto 0);
+  signal r_result_valid : std_logic_vector(1 downto 0);
   signal sel_result_valid : std_logic;
-  signal shift_val_for_res_valid : std_logic;
   signal ready_internal : std_logic;
+  
+  type result_valid_state_t is (S0, S1);
+  signal resvad_state, resvad_nextstate : result_valid_state_t;
+  signal m_axis_valid_internal : std_logic;
 begin
   
   process (clk) is begin
     if rising_edge(clk) then
       if rst = '1' then
-        r_result_valid_1 <= (others => '0');
-        r_result_valid_2 <= (others => '0');
+        r_result_valid <= (others => '0');
       else
-        if s_axis_valid = '1' and ready_internal = '1' then
-          r_result_valid_1 <= shift_val_for_res_valid & r_result_valid_1(K downto 1);
-        end if;
-        r_result_valid_2 <= (s_axis_valid and ready_internal) & r_result_valid_2(1);
+        r_result_valid <= (s_axis_valid and ready_internal) & r_result_valid(1);
       end if;
     end if;
   end process;
-  m_axis_valid <= r_result_valid_1(0) when sel_result_valid = '0' else
-                  r_result_valid_2(0);
+  process (clk) is begin
+    if rising_edge(clk) then
+      if rst = '1' then
+        resvad_state <= S0;
+      else
+        resvad_state <= resvad_nextstate;
+      end if;
+    end if;
+  end process;
+  process (resvad_state, r_result_valid(0), m_axis_ready) is begin
+    m_axis_valid_internal <= '1';
+    resvad_nextstate <= resvad_state;
+    case (resvad_state) is
+        when S0 =>
+          if r_result_valid(0) = '1' then
+            if m_axis_ready = '0' then
+              resvad_nextstate <= S1;
+            end if;
+          else
+            m_axis_valid_internal <= '0';
+          end if;
+        when S1 =>
+          if m_axis_ready = '0' then
+            resvad_nextstate <= S1;
+          else
+            resvad_nextstate <= S0;
+          end if;
+        when others => null;
+    end case;
+  end process;
+  m_axis_valid <= m_axis_valid_internal when sel_result_valid = '1' else '0';         
 
   count_sss_val <= std_logic_vector(to_unsigned(PRE_SSS_LIST(0), COUNTER_WIDTH)) when ifmap_size = "000" else
                    std_logic_vector(to_unsigned(PRE_SSS_LIST(1), COUNTER_WIDTH)) when ifmap_size = "001" else
@@ -176,13 +203,12 @@ begin
     end case;
   end process;
  
-  NEXT_STATE_DECODE: process (state, s_axis_valid, ready_internal, done_counter_1, done_counter_2)
+  NEXT_STATE_DECODE: process (state, s_axis_valid, ready_internal, done_counter_1, done_counter_2, sel_counter1_val)
   begin
     next_state <= state;
     
     en_ifmap_size <= '0';
     sel_result_valid <= '1';
-    shift_val_for_res_valid <= '1';
     
     rst_counter_1 <= '0'; run_counter_1 <= '0';
     rst_counter_2 <= '0'; run_counter_2 <= '0';
@@ -190,31 +216,26 @@ begin
     case (state) is
       when RESET =>
         sel_result_valid <= '0';
-        shift_val_for_res_valid <= '0';
         rst_counter_1 <= '1';
         rst_counter_2 <= '1';
         next_state <= whh;
       when whh =>
         sel_result_valid <= '0';
-        shift_val_for_res_valid <= '0';
         if s_axis_valid = '1' and ready_internal = '1' then
           next_state <= wwh;
         end if;
       when wwh =>
         sel_result_valid <= '0';
-        shift_val_for_res_valid <= '0';
         if s_axis_valid = '1' and ready_internal = '1' then
           next_state <= www;
         end if;
       when www =>
         sel_result_valid <= '0';
-        shift_val_for_res_valid <= '0';
         if s_axis_valid = '1' and ready_internal = '1' then
           next_state <= bbb;
         end if;
       when bbb =>
         sel_result_valid <= '0';
-        shift_val_for_res_valid <= '0';
         if s_axis_valid = '1' and ready_internal = '1' then
           next_state <= nhh;
           en_ifmap_size <= '1';

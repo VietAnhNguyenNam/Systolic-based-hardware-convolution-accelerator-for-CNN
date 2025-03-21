@@ -81,6 +81,7 @@ begin
       I_D(i,j) <= ID_row(i)(j);
     end generate ID2IDROWj;
   end generate ID2IDROWi;
+  ID_row(K-1) <= (others => (others => '0'));
   
   GEN_RSRB : for i in 1 to K-1 generate
     RSRB_INSTANCE : entity work.RSRB
